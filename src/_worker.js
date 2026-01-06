@@ -393,10 +393,19 @@ function htmlPage(env) {
     }
     const res = await fetch(path, Object.assign({}, opts, { headers }));
     const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : ("HTTP " + res.status);
-      throw new Error(msg);
-    }
+      if (!res.ok) {
+        let msg =
+          (data && (data.error || data.message)) ? (data.error || data.message)
+          : ("HTTP " + res.status);
+      
+        // If the error is an object/array, stringify it for display
+        if (typeof msg === "object") {
+          try { msg = JSON.stringify(msg); } catch { msg = String(msg); }
+        }
+
+  throw new Error(String(msg));
+}
+
     return data;
   }
 
