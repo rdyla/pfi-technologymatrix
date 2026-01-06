@@ -3,7 +3,7 @@ main = "src/_worker.js"
 compatibility_date = "2025-12-01"
 
 [vars]
-RESTDB_BASE = "https://YOUR_DB_NAME.restdb.io"
+RESTDB_BASE = "https://pfitechnologymatrix-1f94.restdb.io/"
 RESTDB_COLLECTION = "techmatrix_items"
 
 # Optional (recommended for MVP if not using Cloudflare Access yet)
