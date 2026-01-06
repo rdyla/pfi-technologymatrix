@@ -127,6 +127,8 @@ async function handleItems(req, env, url) {
     const solution = S(body.solution);
     const vendor = S(body.vendor);
     const notes = S(body.notes);
+    const dateImplemented = S(body.dateImplemented);
+    const contractExpiration = S(body.contractExpiration);
 
     if (!customerId || !category || !solution) {
       return json(
@@ -148,6 +150,8 @@ async function handleItems(req, env, url) {
       functionalFit,
       timeCode: time.code,
       timeLabel: time.label,
+      dateImplemented: dateImplemented || null,
+      contractExpiration: contractExpiration || null,
       createdAt: now,
       updatedAt: now,
     };
@@ -287,6 +291,17 @@ function htmlPage(env) {
           <div>
             <label>Functional Fit (1-5)</label>
             <select id="functionalFit">${fitOptions}</select>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px;">
+          <div>
+            <label>Date Implemented</label>
+            <input id="dateImplemented" type="date" />
+          </div>
+          <div>
+            <label>Contract Expiration</label>
+            <input id="contractExpiration" type="date" />
           </div>
         </div>
 
@@ -451,8 +466,13 @@ function htmlPage(env) {
         <tr>
           <td><span class="pill"><span class="time \${code}">\${code}</span> \${label}</span></td>
           <td>\${cat}</td>
-          <td><b>\${sol}</b><div class="muted">\${ven}</div></td>
+          <td>
+            <b>${sol}</b>
+              <div class="muted">${ven}</div>
+              ${di || ce ? `<div class="muted">Impl: ${di || "—"} · Exp: ${ce || "—"}</div>` : ""}
+          </td>
           <td>\${fit}</td>
+
           <td style="max-width: 360px; white-space: pre-wrap;">\${notes}</td>
           <td><button data-del="\${id}">Delete</button></td>
         </tr>\`;
@@ -502,6 +522,8 @@ function htmlPage(env) {
     el("notes").value = "";
     el("technicalFit").value = "5";
     el("functionalFit").value = "5";
+    el("dateImplemented").value = "";
+    el("contractExpiration").value = "";
     updateTimePreview();
     setError("");
   });
