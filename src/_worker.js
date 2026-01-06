@@ -388,6 +388,15 @@ function htmlPage(env) {
     return { code:"E", label:"Eliminate" };
   }
 
+  const val = (id) => {
+  const n = document.getElementById(id);
+  return n ? (n.value || "") : "";
+  };
+  const setVal = (id, v) => {
+    const n = document.getElementById(id);
+    if (n) n.value = v;
+  };
+  
   const el = (id) => document.getElementById(id);
 
   function updateTimePreview() {
@@ -522,8 +531,8 @@ function htmlPage(env) {
     el("notes").value = "";
     el("technicalFit").value = "5";
     el("functionalFit").value = "5";
-    el("dateImplemented").value = "";
-    el("contractExpiration").value = "";
+    setVal("dateImplemented", "");
+    setVal("contractExpiration", "");
     updateTimePreview();
     setError("");
   });
@@ -538,6 +547,8 @@ function htmlPage(env) {
       const notes = (el("notes").value || "").trim();
       const technicalFit = Number(el("technicalFit").value);
       const functionalFit = Number(el("functionalFit").value);
+      const dateImplemented = val("dateImplemented");
+      const contractExpiration = val("contractExpiration");
 
       if (!customerId) throw new Error("Customer ID is required.");
       if (!category) throw new Error("Category is required.");
