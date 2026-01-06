@@ -462,42 +462,38 @@ function htmlPage(env) {
       tbody.innerHTML = '<tr><td colspan="6" class="muted">No data yet.</td></tr>';
       return;
     }
+  
     tbody.innerHTML = items.map(it => {
       const id = it._id || it.id || "";
       const code = it.timeCode || "T";
       const label = it.timeLabel || "";
       const fit = (it.technicalFit ?? "?") + "/" + (it.functionalFit ?? "?");
-      const notes = esc(it.notes);
+  
       const sol = esc(it.solution);
       const ven = esc(it.vendor);
       const cat = esc(it.category);
-      return \`
+      const notes = esc(it.notes);
+  
+      const di = it.dateImplemented ? esc(it.dateImplemented) : "";
+      const ce = it.contractExpiration ? esc(it.contractExpiration) : "";
+  
+      return `
         <tr>
-          <td><span class="pill"><span class="time \${code}">\${code}</span> \${label}</span></td>
-          <td>\${cat}</td>
+          <td><span class="pill"><span class="time ${code}">${code}</span> ${label}</span></td>
+          <td>${cat}</td>
           <td>
             <b>${sol}</b>
-              <div class="muted">${ven}</div>
-              ${di || ce ? `<div class="muted">Impl: ${di || "—"} · Exp: ${ce || "—"}</div>` : ""}
+            <div class="muted">${ven}</div>
+            ${di || ce ? `<div class="muted">Impl: ${di || "—"} · Exp: ${ce || "—"}</div>` : ""}
           </td>
-          <td>\${fit}</td>
-
-          <td style="max-width: 360px; white-space: pre-wrap;">\${notes}</td>
-          <td><button data-del="\${id}">Delete</button></td>
-        </tr>\`;
+          <td>${fit}</td>
+          <td style="max-width:360px; white-space:pre-wrap;">${notes}</td>
+          <td><button data-del="${id}">Delete</button></td>
+        </tr>
+      `;
     }).join("");
-
-    [...tbody.querySelectorAll("button[data-del]")].forEach(btn => {
-      btn.addEventListener("click", async () => {
-        try {
-          await api("/api/items/" + btn.getAttribute("data-del"), { method: "DELETE" });
-          await refresh();
-        } catch (e) {
-          setError(e.message || String(e));
-        }
-      });
-    });
   }
+
 
   // --- Embed mode for Dynamics iFrame ---
   (function initFromQuery() {
