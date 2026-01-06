@@ -1,0 +1,10 @@
+name = "technology-matrix"
+main = "src/_worker.js"
+compatibility_date = "2025-12-01"
+
+[vars]
+RESTDB_BASE = "https://YOUR_DB_NAME.restdb.io"
+RESTDB_COLLECTION = "techmatrix_items"
+
+# Optional (recommended for MVP if not using Cloudflare Access yet)
+APP_SHARED_TOKEN = "change-me-to-a-long-random-string"
