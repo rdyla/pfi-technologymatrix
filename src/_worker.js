@@ -1,4 +1,5 @@
-// src/worker.js — Technology Matrix (Worker + restdb.io) — iFrame-friendly for Dynamics
+// src/_worker.js — Technology Matrix (Worker + restdb.io) — iFrame-friendly for Dynamics
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -57,6 +58,14 @@ function requireEnv(env, keys = []) {
   if (missing.length) {
     throw new Error(`Missing env vars: ${missing.join(", ")}`);
   }
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /* ----------------------------- RESTDB API ----------------------------- */
@@ -127,6 +136,8 @@ async function handleItems(req, env, url) {
     const solution = S(body.solution);
     const vendor = S(body.vendor);
     const notes = S(body.notes);
+
+    // New date fields (date-only strings like "2026-01-06")
     const dateImplemented = S(body.dateImplemented);
     const contractExpiration = S(body.contractExpiration);
 
@@ -213,6 +224,8 @@ function htmlPage(env) {
 
   const tokenGateEnabled = !!env.APP_SHARED_TOKEN;
 
+  // NOTE: Do NOT use backticks in the browser script section below.
+  // This avoids breaking the Worker’s outer template literal and causing build errors.
   return `<!doctype html>
 <html>
 <head>
@@ -343,16 +356,12 @@ function htmlPage(env) {
         </div>
 
         <div id="tokenGate" class="muted" style="margin-top:10px;">
-          ${
-            tokenGateEnabled
-              ? `This app is token-gated (MVP). Enter your token below (or protect with Cloudflare Access and remove the token gate).`
-              : `Token gate is disabled. If this is internal-only, consider Cloudflare Access.`
-          }
+          ${tokenGateEnabled
+            ? "This app is token-gated (MVP). Enter your token below (or protect with Cloudflare Access and remove the token gate)."
+            : "Token gate is disabled. If this is internal-only, consider Cloudflare Access."}
         </div>
 
-        <div id="tokenRow" style="margin-top:10px;" class="${
-          tokenGateEnabled ? "" : "hidden"
-        }">
+        <div id="tokenRow" style="margin-top:10px;" class="${tokenGateEnabled ? "" : "hidden"}">
           <label>X-App-Token</label>
           <input id="appToken" placeholder="paste APP_SHARED_TOKEN here" />
         </div>
@@ -379,227 +388,230 @@ function htmlPage(env) {
   </div>
 
 <script>
+(function(){
   function computeTIME(tech, func) {
-    const techHigh = Number(tech) >= 4;
-    const funcHigh = Number(func) >= 4;
+    var techHigh = Number(tech) >= 4;
+    var funcHigh = Number(func) >= 4;
     if (techHigh && funcHigh) return { code:"I", label:"Invest" };
     if (!techHigh && funcHigh) return { code:"M", label:"Migrate" };
     if (techHigh && !funcHigh) return { code:"T", label:"Tolerate" };
     return { code:"E", label:"Eliminate" };
   }
 
-  const val = (id) => {
-  const n = document.getElementById(id);
-  return n ? (n.value || "") : "";
-  };
-  const setVal = (id, v) => {
-    const n = document.getElementById(id);
-    if (n) n.value = v;
-  };
-  
-  const el = (id) => document.getElementById(id);
+  function el(id){ return document.getElementById(id); }
 
-  function updateTimePreview() {
-    const tech = el("technicalFit").value;
-    const func = el("functionalFit").value;
-    const t = computeTIME(tech, func);
+  function val(id){
+    var n = el(id);
+    return n ? (n.value || "") : "";
+  }
+
+  function setVal(id, v){
+    var n = el(id);
+    if (n) n.value = v;
+  }
+
+  function esc(s){
+    return String(s||"")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;");
+  }
+
+  function setError(msg){
+    el("err").textContent = msg || "";
+  }
+
+  function updateTimePreview(){
+    var tech = val("technicalFit");
+    var func = val("functionalFit");
+    var t = computeTIME(tech, func);
     el("timeCode").textContent = t.code;
     el("timeLabel").textContent = t.label;
     el("timeCode").className = "time " + t.code;
   }
 
-  async function api(path, opts={}) {
-    const headers = Object.assign({}, opts.headers || {});
-    const tokenRowVisible = !el("tokenRow").classList.contains("hidden");
+  async function api(path, opts){
+    opts = opts || {};
+    var headers = Object.assign({}, opts.headers || {});
+    var tokenRow = el("tokenRow");
+    var tokenRowVisible = tokenRow && !tokenRow.classList.contains("hidden");
     if (tokenRowVisible) {
-      const token = (el("appToken").value || "").trim();
-      headers["x-app-token"] = token;
+      headers["x-app-token"] = String(val("appToken") || "").trim();
     }
-    const res = await fetch(path, Object.assign({}, opts, { headers }));
-    const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        let msg =
-          (data && (data.error || data.message)) ? (data.error || data.message)
-          : ("HTTP " + res.status);
-      
-        // If the error is an object/array, stringify it for display
-        if (typeof msg === "object") {
-          try { msg = JSON.stringify(msg); } catch { msg = String(msg); }
-        }
-
-  throw new Error(String(msg));
-}
-
+    var res = await fetch(path, Object.assign({}, opts, { headers: headers }));
+    var data = null;
+    try { data = await res.json(); } catch(_e) { data = null; }
+    if (!res.ok) {
+      var msg = (data && (data.error || data.message)) ? (data.error || data.message) : ("HTTP " + res.status);
+      if (typeof msg === "object") {
+        try { msg = JSON.stringify(msg); } catch(_e2) { msg = String(msg); }
+      }
+      throw new Error(String(msg));
+    }
     return data;
   }
 
-  function setError(msg) {
-    el("err").textContent = msg || "";
-  }
-
-  async function refresh() {
+  async function refresh(){
     setError("");
-    const customerId = (el("customerId").value || "").trim();
+    var customerId = String(val("customerId") || "").trim();
     if (!customerId) {
       renderRows([]);
       return;
     }
-    const category = el("filterCategory").value;
-    const q = new URLSearchParams({ customerId });
+    var category = val("filterCategory");
+    var q = new URLSearchParams({ customerId: customerId });
     if (category) q.set("category", category);
-
-    const out = await api("/api/items?" + q.toString(), { method: "GET" });
-    renderRows(out.items || []);
+    var out = await api("/api/items?" + q.toString(), { method: "GET" });
+    renderRows((out && out.items) ? out.items : []);
   }
 
-  function esc(s) {
-    return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  }
+  function renderRows(items){
+    var tbody = el("tbody");
+    if (!tbody) return;
 
-  function renderRows(items) {
-    const tbody = el("tbody");
-    if (!items.length) {
+    if (!items || !items.length) {
       tbody.innerHTML = '<tr><td colspan="6" class="muted">No data yet.</td></tr>';
       return;
     }
-  
-    tbody.innerHTML = items.map(it => {
-      [...tbody.querySelectorAll("button[data-del]")].forEach(btn => {
-        btn.addEventListener("click", async () => {
+
+    var html = "";
+    for (var i=0; i<items.length; i++){
+      var it = items[i] || {};
+      var id = it._id || it.id || "";
+      var code = it.timeCode || "T";
+      var label = it.timeLabel || "";
+      var fit = (it.technicalFit ?? "?") + "/" + (it.functionalFit ?? "?");
+
+      var sol = esc(it.solution);
+      var ven = esc(it.vendor);
+      var cat = esc(it.category);
+      var notes = esc(it.notes);
+
+      var di = it.dateImplemented ? esc(it.dateImplemented) : "";
+      var ce = it.contractExpiration ? esc(it.contractExpiration) : "";
+
+      var datesLine = "";
+      if (di || ce) {
+        datesLine = '<div class="muted">Impl: ' + (di || "—") + ' · Exp: ' + (ce || "—") + '</div>';
+      }
+
+      html += '<tr>'
+        + '<td><span class="pill"><span class="time ' + code + '">' + code + '</span> ' + esc(label) + '</span></td>'
+        + '<td>' + cat + '</td>'
+        + '<td><b>' + sol + '</b><div class="muted">' + ven + '</div>' + datesLine + '</td>'
+        + '<td>' + esc(fit) + '</td>'
+        + '<td style="max-width:360px; white-space:pre-wrap;">' + notes + '</td>'
+        + '<td><button data-del="' + esc(id) + '">Delete</button></td>'
+        + '</tr>';
+    }
+    tbody.innerHTML = html;
+
+    var btns = tbody.querySelectorAll("button[data-del]");
+    for (var j=0; j<btns.length; j++){
+      (function(btn){
+        btn.addEventListener("click", async function(){
           try {
-            await api("/api/items/" + btn.getAttribute("data-del"), { method: "DELETE" });
+            var did = btn.getAttribute("data-del");
+            await api("/api/items/" + did, { method: "DELETE" });
             await refresh();
-          } catch (e) {
+          } catch(e) {
             setError(e.message || String(e));
           }
         });
-      });
-      
-      const id = it._id || it.id || "";
-      const code = it.timeCode || "T";
-      const label = it.timeLabel || "";
-      const fit = (it.technicalFit ?? "?") + "/" + (it.functionalFit ?? "?");
-  
-      const sol = esc(it.solution);
-      const ven = esc(it.vendor);
-      const cat = esc(it.category);
-      const notes = esc(it.notes);
-  
-      const di = it.dateImplemented ? esc(it.dateImplemented) : "";
-      const ce = it.contractExpiration ? esc(it.contractExpiration) : "";
-  
-      return `
-        <tr>
-          <td><span class="pill"><span class="time ${code}">${code}</span> ${label}</span></td>
-          <td>${cat}</td>
-          <td>
-            <b>${sol}</b>
-            <div class="muted">${ven}</div>
-            ${(di || ce) ? ('<div class="muted">Impl: ' + (di || "—") + ' · Exp: ' + (ce || "—") + '</div>') : ""}
-          </td>
-          <td>${fit}</td>
-          <td style="max-width:360px; white-space:pre-wrap;">${notes}</td>
-          <td><button data-del="${id}">Delete</button></td>
-        </tr>
-      `;
-    }).join("");
+      })(btns[j]);
+    }
   }
 
-
   // --- Embed mode for Dynamics iFrame ---
-  (function initFromQuery() {
-    const qs = new URLSearchParams(location.search);
-    const customerIdQS = (qs.get("customerId") || "").trim();
-    const embed = qs.get("embed") === "1";
+  (function initFromQuery(){
+    var qs = new URLSearchParams(location.search);
+    var customerIdQS = String(qs.get("customerId") || "").trim();
+    var embed = qs.get("embed") === "1";
 
     if (embed) {
       document.body.style.margin = "10px";
-      const t = el("title");
-      const s = el("subtitle");
+      var t = el("title");
+      var s = el("subtitle");
       if (t) t.style.display = "none";
       if (s) s.style.display = "none";
     }
 
     if (customerIdQS) {
-      el("customerId").value = customerIdQS;
+      setVal("customerId", customerIdQS);
       el("customerId").setAttribute("readonly","readonly");
       el("customerId").style.opacity = "0.75";
-      // hide row label text if desired:
-      // el("customerRow").classList.add("hidden"); // uncomment if you want it fully hidden
     }
   })();
 
   el("technicalFit").addEventListener("change", updateTimePreview);
   el("functionalFit").addEventListener("change", updateTimePreview);
 
-  el("resetBtn").addEventListener("click", () => {
-    el("solution").value = "";
-    el("vendor").value = "";
-    el("notes").value = "";
-    el("technicalFit").value = "5";
-    el("functionalFit").value = "5";
+  el("resetBtn").addEventListener("click", function(){
+    setVal("solution", "");
+    setVal("vendor", "");
+    setVal("notes", "");
+    setVal("technicalFit", "5");
+    setVal("functionalFit", "5");
     setVal("dateImplemented", "");
     setVal("contractExpiration", "");
     updateTimePreview();
     setError("");
   });
 
-  el("saveBtn").addEventListener("click", async () => {
+  el("saveBtn").addEventListener("click", async function(){
     try {
       setError("");
-      const customerId = (el("customerId").value || "").trim();
-      const category = el("category").value;
-      const solution = (el("solution").value || "").trim();
-      const vendor = (el("vendor").value || "").trim();
-      const notes = (el("notes").value || "").trim();
-      const technicalFit = Number(el("technicalFit").value);
-      const functionalFit = Number(el("functionalFit").value);
-      const dateImplemented = val("dateImplemented");
-      const contractExpiration = val("contractExpiration");
+      var customerId = String(val("customerId") || "").trim();
+      var category = val("category");
+      var solution = String(val("solution") || "").trim();
+      var vendor = String(val("vendor") || "").trim();
+      var notes = String(val("notes") || "").trim();
+      var technicalFit = Number(val("technicalFit"));
+      var functionalFit = Number(val("functionalFit"));
+      var dateImplemented = val("dateImplemented");       // YYYY-MM-DD or ""
+      var contractExpiration = val("contractExpiration"); // YYYY-MM-DD or ""
 
       if (!customerId) throw new Error("Customer ID is required.");
       if (!category) throw new Error("Category is required.");
       if (!solution) throw new Error("Current solution is required.");
 
-      const payload = {
-        customerId, category, solution, vendor, notes,
-        technicalFit, functionalFit,
-        dateImplemented,
-        contractExpiration
+      var payload = {
+        customerId: customerId,
+        category: category,
+        solution: solution,
+        vendor: vendor,
+        notes: notes,
+        technicalFit: technicalFit,
+        functionalFit: functionalFit,
+        dateImplemented: dateImplemented,
+        contractExpiration: contractExpiration
       };
-      
+
       await api("/api/items", {
         method: "POST",
-        headers: { "content-type":"application/json" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload)
       });
 
-      el("solution").value = "";
-      el("vendor").value = "";
-      el("notes").value = "";
+      setVal("solution", "");
+      setVal("vendor", "");
+      setVal("notes", "");
       setVal("dateImplemented", "");
       setVal("contractExpiration", "");
       await refresh();
-    } catch (e) {
+    } catch(e) {
       setError(e.message || String(e));
     }
   });
 
-  el("refreshBtn").addEventListener("click", () => refresh().catch(()=>{}));
-  el("filterCategory").addEventListener("change", () => refresh().catch(()=>{}));
-  el("customerId").addEventListener("change", () => refresh().catch(()=>{}));
+  el("refreshBtn").addEventListener("click", function(){ refresh().catch(function(){}); });
+  el("filterCategory").addEventListener("change", function(){ refresh().catch(function(){}); });
+  el("customerId").addEventListener("change", function(){ refresh().catch(function(){}); });
 
   updateTimePreview();
-  refresh().catch(()=>{});
+  refresh().catch(function(){});
+})();
 </script>
 </body>
 </html>`;
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
