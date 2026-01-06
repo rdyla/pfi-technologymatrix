@@ -248,6 +248,10 @@ function htmlPage(env) {
     button { padding: 10px 14px; border-radius: 12px; border: 1px solid #ccc; background: #fff; cursor: pointer; font-weight: 600; }
     button.primary { border-color: #111; }
     .pill { display:inline-flex; align-items:center; gap: 8px; padding: 6px 10px; border-radius: 999px; font-size: 12px; border: 1px solid #ddd; }
+    .seg { display:flex; border: 1px solid #ccc; border-radius: 999px; overflow:hidden; }
+    .seg button { flex: 1; padding: 10px 0; border: 0; background: #fff; cursor: pointer; font-weight: 700; }
+    .seg button + button { border-left: 1px solid #eee; }
+    .seg button.active { background: #111; color: #fff; }
     .time { font-weight: 800; width: 22px; height: 22px; border-radius: 8px; display:inline-flex; align-items:center; justify-content:center; color:#fff; }
     .I { background: #1f9d55; }
     .M { background: #d97706; }
@@ -262,6 +266,7 @@ function htmlPage(env) {
     .small { max-width: 260px; }
     .error { color:#b91c1c; font-size: 13px; margin-top: 8px; }
     .hidden { display:none; }
+    #copyCrmLink { max-width: 120px; }
   </style>
 </head>
 <body>
@@ -299,11 +304,26 @@ function htmlPage(env) {
         <div class="row" style="margin-top:12px;">
           <div>
             <label>Technical Fit (1-5)</label>
-            <select id="technicalFit">${fitOptions}</select>
+            <div class="seg" id="techSeg" data-target="technicalFit">
+              <button type="button" data-v="1">1</button>
+              <button type="button" data-v="2">2</button>
+              <button type="button" data-v="3">3</button>
+              <button type="button" data-v="4">4</button>
+              <button type="button" data-v="5">5</button>
+            </div>
+            <input id="technicalFit" type="hidden" value="5" />
           </div>
+        
           <div>
             <label>Functional Fit (1-5)</label>
-            <select id="functionalFit">${fitOptions}</select>
+            <div class="seg" id="funcSeg" data-target="functionalFit">
+              <button type="button" data-v="1">1</button>
+              <button type="button" data-v="2">2</button>
+              <button type="button" data-v="3">3</button>
+              <button type="button" data-v="4">4</button>
+              <button type="button" data-v="5">5</button>
+            </div>
+            <input id="functionalFit" type="hidden" value="5" />
           </div>
         </div>
 
@@ -385,6 +405,14 @@ function htmlPage(env) {
         </div>
       </div>
     </div>
+    <div class="card" style="margin-top:12px;">
+      <label>Dynamics iFrame Link (paste into CRM link field)</label>
+      <div class="row">
+        <input id="crmLink" readonly />
+        <button type="button" id="copyCrmLink">Copy</button>
+      </div>
+      <div class="muted">This link includes <b>customerId</b> and <b>embed=1</b>.</div>
+    </div>
   </div>
 
 <script>
@@ -429,6 +457,51 @@ function htmlPage(env) {
     el("timeLabel").textContent = t.label;
     el("timeCode").className = "time " + t.code;
   }
+
+  initSeg("techSeg", "technicalFit");
+  initSeg("funcSeg", "functionalFit");
+
+  function initSeg(segId, hiddenId) {
+  var seg = el(segId);
+  if (!seg) return;
+
+  function setActive(v) {
+    setVal(hiddenId, String(v));
+    var btns = seg.querySelectorAll("button[data-v]");
+    for (var i=0; i<btns.length; i++) {
+      var b = btns[i];
+      var bv = b.getAttribute("data-v");
+      if (String(bv) === String(v)) b.classList.add("active");
+      else b.classList.remove("active");
+    }
+    updateTimePreview();
+  }
+  
+  function buildCrmLink() {
+    var base = location.origin + "/";
+    var cid = String(val("customerId") || "").trim();
+    if (!cid) return base; // fallback
+    return base + "?customerId=" + encodeURIComponent(cid) + "&embed=1";
+  }
+  
+  function updateCrmLink() {
+    var linkEl = el("crmLink");
+    if (!linkEl) return;
+    linkEl.value = buildCrmLink();
+  }
+
+  seg.addEventListener("click", function(e) {
+    var t = e.target;
+    if (!t) return;
+    if (t.tagName && t.tagName.toLowerCase() === "button") {
+      var v = t.getAttribute("data-v");
+      if (v) setActive(v);
+    }
+  });
+
+  // initialize from existing hidden value (default 5)
+  setActive(val(hiddenId) || "5");
+}
 
   async function api(path, opts){
     opts = opts || {};
@@ -543,6 +616,8 @@ function htmlPage(env) {
     }
   })();
 
+  updateCrmLink();
+
   el("technicalFit").addEventListener("change", updateTimePreview);
   el("functionalFit").addEventListener("change", updateTimePreview);
 
@@ -604,9 +679,31 @@ function htmlPage(env) {
     }
   });
 
+  var copyBtn = el("copyCrmLink");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async function() {
+        try {
+          updateCrmLink();
+          var text = val("crmLink");
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = "Copied!";
+          setTimeout(function(){ copyBtn.textContent = "Copy"; }, 1200);
+        } catch (e) {
+          // fallback: select text
+          var inp = el("crmLink");
+          if (inp) { inp.focus(); inp.select(); }
+          setError("Copy failed — select and copy manually.");
+        }
+      });
+    }
+
   el("refreshBtn").addEventListener("click", function(){ refresh().catch(function(){}); });
   el("filterCategory").addEventListener("change", function(){ refresh().catch(function(){}); });
-  el("customerId").addEventListener("change", function(){ refresh().catch(function(){}); });
+  el("customerId").addEventListener("change", function(){
+      updateCrmLink();
+      refresh().catch(function(){});
+    });
+
 
   updateTimePreview();
   refresh().catch(function(){});
