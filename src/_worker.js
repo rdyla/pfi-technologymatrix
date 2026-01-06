@@ -446,7 +446,8 @@ function htmlPage(env) {
   }
 
   function setError(msg){
-    el("err").textContent = msg || "";
+    var e = el("err");
+    if (e) e.textContent = msg || "";
   }
 
   function updateTimePreview(){
@@ -458,50 +459,46 @@ function htmlPage(env) {
     el("timeCode").className = "time " + t.code;
   }
 
-  initSeg("techSeg", "technicalFit");
-  initSeg("funcSeg", "functionalFit");
-
-  function initSeg(segId, hiddenId) {
-  var seg = el(segId);
-  if (!seg) return;
-
-  function setActive(v) {
-    setVal(hiddenId, String(v));
-    var btns = seg.querySelectorAll("button[data-v]");
-    for (var i=0; i<btns.length; i++) {
-      var b = btns[i];
-      var bv = b.getAttribute("data-v");
-      if (String(bv) === String(v)) b.classList.add("active");
-      else b.classList.remove("active");
-    }
-    updateTimePreview();
-  }
-  
   function buildCrmLink() {
     var base = location.origin + "/";
     var cid = String(val("customerId") || "").trim();
-    if (!cid) return base; // fallback
+    if (!cid) return base;
     return base + "?customerId=" + encodeURIComponent(cid) + "&embed=1";
   }
-  
+
   function updateCrmLink() {
     var linkEl = el("crmLink");
     if (!linkEl) return;
     linkEl.value = buildCrmLink();
   }
 
-  seg.addEventListener("click", function(e) {
-    var t = e.target;
-    if (!t) return;
-    if (t.tagName && t.tagName.toLowerCase() === "button") {
-      var v = t.getAttribute("data-v");
-      if (v) setActive(v);
-    }
-  });
+  function initSeg(segId, hiddenId) {
+    var seg = el(segId);
+    if (!seg) return;
 
-  // initialize from existing hidden value (default 5)
-  setActive(val(hiddenId) || "5");
-}
+    function setActive(v) {
+      setVal(hiddenId, String(v));
+      var btns = seg.querySelectorAll("button[data-v]");
+      for (var i=0; i<btns.length; i++) {
+        var b = btns[i];
+        var bv = b.getAttribute("data-v");
+        if (String(bv) === String(v)) b.classList.add("active");
+        else b.classList.remove("active");
+      }
+      updateTimePreview();
+    }
+
+    seg.addEventListener("click", function(e) {
+      var t = e.target;
+      if (!t) return;
+      if (t.tagName && t.tagName.toLowerCase() === "button") {
+        var v = t.getAttribute("data-v");
+        if (v) setActive(v);
+      }
+    });
+
+    setActive(val(hiddenId) || "5");
+  }
 
   async function api(path, opts){
     opts = opts || {};
@@ -614,12 +611,12 @@ function htmlPage(env) {
       el("customerId").setAttribute("readonly","readonly");
       el("customerId").style.opacity = "0.75";
     }
+    updateCrmLink();
   })();
 
-  updateCrmLink();
-
-  el("technicalFit").addEventListener("change", updateTimePreview);
-  el("functionalFit").addEventListener("change", updateTimePreview);
+  // init segmented controls
+  initSeg("techSeg", "technicalFit");
+  initSeg("funcSeg", "functionalFit");
 
   el("resetBtn").addEventListener("click", function(){
     setVal("solution", "");
@@ -629,6 +626,9 @@ function htmlPage(env) {
     setVal("functionalFit", "5");
     setVal("dateImplemented", "");
     setVal("contractExpiration", "");
+    initSeg("techSeg", "technicalFit");
+    initSeg("funcSeg", "functionalFit");
+    updateCrmLink();
     updateTimePreview();
     setError("");
   });
@@ -643,8 +643,8 @@ function htmlPage(env) {
       var notes = String(val("notes") || "").trim();
       var technicalFit = Number(val("technicalFit"));
       var functionalFit = Number(val("functionalFit"));
-      var dateImplemented = val("dateImplemented");       // YYYY-MM-DD or ""
-      var contractExpiration = val("contractExpiration"); // YYYY-MM-DD or ""
+      var dateImplemented = val("dateImplemented");
+      var contractExpiration = val("contractExpiration");
 
       if (!customerId) throw new Error("Customer ID is required.");
       if (!category) throw new Error("Category is required.");
@@ -673,6 +673,7 @@ function htmlPage(env) {
       setVal("notes", "");
       setVal("dateImplemented", "");
       setVal("contractExpiration", "");
+      updateCrmLink();
       await refresh();
     } catch(e) {
       setError(e.message || String(e));
@@ -680,35 +681,36 @@ function htmlPage(env) {
   });
 
   var copyBtn = el("copyCrmLink");
-    if (copyBtn) {
-      copyBtn.addEventListener("click", async function() {
-        try {
-          updateCrmLink();
-          var text = val("crmLink");
-          await navigator.clipboard.writeText(text);
-          copyBtn.textContent = "Copied!";
-          setTimeout(function(){ copyBtn.textContent = "Copy"; }, 1200);
-        } catch (e) {
-          // fallback: select text
-          var inp = el("crmLink");
-          if (inp) { inp.focus(); inp.select(); }
-          setError("Copy failed — select and copy manually.");
-        }
-      });
-    }
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async function() {
+      try {
+        updateCrmLink();
+        var text = val("crmLink");
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = "Copied!";
+        setTimeout(function(){ copyBtn.textContent = "Copy"; }, 1200);
+      } catch (e) {
+        var inp = el("crmLink");
+        if (inp) { inp.focus(); inp.select(); }
+        setError("Copy failed — select and copy manually.");
+      }
+    });
+  }
 
   el("refreshBtn").addEventListener("click", function(){ refresh().catch(function(){}); });
   el("filterCategory").addEventListener("change", function(){ refresh().catch(function(){}); });
-  el("customerId").addEventListener("change", function(){
-      updateCrmLink();
-      refresh().catch(function(){});
-    });
 
+  el("customerId").addEventListener("change", function(){
+    updateCrmLink();
+    refresh().catch(function(){});
+  });
 
   updateTimePreview();
+  updateCrmLink();
   refresh().catch(function(){});
 })();
 </script>
+
 </body>
 </html>`;
 }
