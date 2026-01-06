@@ -464,6 +464,17 @@ function htmlPage(env) {
     }
   
     tbody.innerHTML = items.map(it => {
+      [...tbody.querySelectorAll("button[data-del]")].forEach(btn => {
+        btn.addEventListener("click", async () => {
+          try {
+            await api("/api/items/" + btn.getAttribute("data-del"), { method: "DELETE" });
+            await refresh();
+          } catch (e) {
+            setError(e.message || String(e));
+          }
+        });
+      });
+      
       const id = it._id || it.id || "";
       const code = it.timeCode || "T";
       const label = it.timeLabel || "";
@@ -484,7 +495,7 @@ function htmlPage(env) {
           <td>
             <b>${sol}</b>
             <div class="muted">${ven}</div>
-            ${di || ce ? `<div class="muted">Impl: ${di || "—"} · Exp: ${ce || "—"}</div>` : ""}
+            ${(di || ce) ? ('<div class="muted">Impl: ' + (di || "—") + ' · Exp: ' + (ce || "—") + '</div>') : ""}
           </td>
           <td>${fit}</td>
           <td style="max-width:360px; white-space:pre-wrap;">${notes}</td>
@@ -550,7 +561,13 @@ function htmlPage(env) {
       if (!category) throw new Error("Category is required.");
       if (!solution) throw new Error("Current solution is required.");
 
-      const payload = { customerId, category, solution, vendor, notes, technicalFit, functionalFit };
+      const payload = {
+        customerId, category, solution, vendor, notes,
+        technicalFit, functionalFit,
+        dateImplemented,
+        contractExpiration
+      };
+      
       await api("/api/items", {
         method: "POST",
         headers: { "content-type":"application/json" },
@@ -560,6 +577,8 @@ function htmlPage(env) {
       el("solution").value = "";
       el("vendor").value = "";
       el("notes").value = "";
+      setVal("dateImplemented", "");
+      setVal("contractExpiration", "");
       await refresh();
     } catch (e) {
       setError(e.message || String(e));
