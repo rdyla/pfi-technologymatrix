@@ -306,7 +306,12 @@ function htmlPage(env) {
     .wrap { max-width: 100%; margin: 18px; }
     h1 { margin: 0 0 8px; }
     .sub { color: #555; margin: 0 0 16px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px;  align-items: start; }
+    .grid {
+      display: grid;
+      grid-template-columns: 420px 1fr; /* 👈 left fixed, right flexible */
+      gap: 16px;
+      align-items: start;
+    }
     label { font-size: 12px; color: #333; display:block; margin-bottom: 6px;  color: #605e5c; font-weight: 600;}
     input, select, textarea { width: 100%; min-width: 0; padding: 10px; border: 1px solid #c8c6c4; border-radius: 8px; font-size: 14px; box-sizing: border-box; background: #fff;}
     input:focus, select:focus, textarea:focus {
@@ -318,7 +323,7 @@ function htmlPage(env) {
     .row { display:flex; gap: 12px; align-items:center; flex-wrap: wrap;}
     .row > * { flex: 1; min-width: 220px;}
     /* Cards */
-.card {
+    .card {
         background: #fff;
         border: 1px solid #edebe9;
         box-shadow: none;
