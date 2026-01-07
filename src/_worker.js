@@ -1,15 +1,12 @@
 // src/_worker.js — Technology Matrix (Worker + restdb.io) — iFrame-friendly for Dynamics
-
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
 
-    // ---------- Routes ----------
     if (url.pathname === "/") {
       return new Response(htmlPage(env), {
         headers: {
           "content-type": "text/html; charset=utf-8",
-          // Allow ONLY your Dynamics org to embed this page in an iFrame
           "content-security-policy":
             "frame-ancestors https://packetfusioncrm.crm.dynamics.com;",
           "referrer-policy": "strict-origin-when-cross-origin",
@@ -18,16 +15,8 @@ export default {
       });
     }
 
-    if (url.pathname.startsWith("/api/items")) {
-      // Optional simple token gate for MVP
-      // If you put this behind Cloudflare Access, you can remove this entirely.
-      if (env.APP_SHARED_TOKEN) {
-        const token = req.headers.get("x-app-token") || "";
-        if (token !== env.APP_SHARED_TOKEN) {
-          return json({ ok: false, error: "Unauthorized" }, 401);
-        }
-      }
-      return handleItems(req, env, url);
+    if (url.pathname.startsWith("/api/")) {
+      return handleApi(req, env, url);
     }
 
     return new Response("Not Found", { status: 404 });
@@ -43,7 +32,6 @@ function json(obj, status = 200, headers = {}) {
 }
 
 function computeTIME(technicalFit, functionalFit) {
-  // High = 4–5, Low = 1–3
   const techHigh = Number(technicalFit) >= 4;
   const funcHigh = Number(functionalFit) >= 4;
 
@@ -55,9 +43,7 @@ function computeTIME(technicalFit, functionalFit) {
 
 function requireEnv(env, keys = []) {
   const missing = keys.filter((k) => !env[k]);
-  if (missing.length) {
-    throw new Error(`Missing env vars: ${missing.join(", ")}`);
-  }
+  if (missing.length) throw new Error(`Missing env vars: ${missing.join(", ")}`);
 }
 
 function escapeHtml(s) {
@@ -68,50 +54,78 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-/* ----------------------------- RESTDB API ----------------------------- */
-async function handleItems(req, env, url) {
-  try {
-    requireEnv(env, ["RESTDB_BASE", "RESTDB_COLLECTION", "RESTDB_API_KEY"]);
-  } catch (e) {
-    return json({ ok: false, error: e.message }, 500);
-  }
+/* ----------------------------- RESTDB ----------------------------- */
+async function restdbFetch(env, pathWithQuery, init = {}) {
+  requireEnv(env, ["RESTDB_BASE", "RESTDB_COLLECTION", "RESTDB_API_KEY"]);
 
   const base = String(env.RESTDB_BASE).replace(/\/$/, "");
-  const col = String(env.RESTDB_COLLECTION);
-  const apiKey = String(env.RESTDB_API_KEY);
+  const url = `${base}${pathWithQuery}`;
+
+  const headers = {
+    "Content-Type": "application/json",
+    "x-apikey": String(env.RESTDB_API_KEY),
+    ...(init.headers || {}),
+  };
+
+  const res = await fetch(url, { ...init, headers });
+  const text = await res.text().catch(() => "");
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  return { res, data };
+}
+
+/* ----------------------------- API ----------------------------- */
+async function handleApi(req, env, url) {
+  // /api/items, /api/items/:id
+  if (url.pathname.startsWith("/api/items")) {
+    return handleItems(req, env, url);
+  }
+
+  // /api/customers
+  if (url.pathname === "/api/customers") {
+    return handleCustomers(req, env);
+  }
+
+  return json({ ok: false, error: "Not Found" }, 404);
+}
+
+async function handleItems(req, env, url) {
+  const baseCol = String(env.RESTDB_COLLECTION || "");
+  if (!baseCol) return json({ ok: false, error: "Missing RESTDB_COLLECTION" }, 500);
 
   const parts = url.pathname.split("/").filter(Boolean); // ["api","items",":id?"]
   const id = parts[2] || null;
 
-  const restUrl = id
-    ? `${base}/rest/${encodeURIComponent(col)}/${encodeURIComponent(id)}`
-    : `${base}/rest/${encodeURIComponent(col)}`;
+  const col = encodeURIComponent(baseCol);
 
-  const headers = {
-    "Content-Type": "application/json",
-    "x-apikey": apiKey,
-  };
-
-  // GET /api/items?customerId=...&category=...
+  // GET /api/items?customerName=...&category=...
   if (req.method === "GET" && !id) {
-    const customerId = (url.searchParams.get("customerId") || "").trim();
+    const customerName = (url.searchParams.get("customerName") || "").trim();
+    const customerId = (url.searchParams.get("customerId") || "").trim(); // legacy/optional
     const category = (url.searchParams.get("category") || "").trim();
 
     const q = {};
-    if (customerId) q.customerId = customerId;
+    if (customerName) q.customerName = customerName;
+    // allow legacy filter if someone still passes a guid
+    if (!customerName && customerId) q.customerId = customerId;
     if (category) q.category = category;
 
+    const sort = encodeURIComponent(JSON.stringify({ createdAt: -1 }));
     const qParam =
       Object.keys(q).length > 0
-        ? `?q=${encodeURIComponent(JSON.stringify(q))}&sort=${encodeURIComponent(
-            JSON.stringify({ createdAt: -1 })
-          )}`
-        : `?sort=${encodeURIComponent(JSON.stringify({ createdAt: -1 }))}`;
+        ? `?q=${encodeURIComponent(JSON.stringify(q))}&sort=${sort}`
+        : `?sort=${sort}`;
 
-    const r = await fetch(restUrl + qParam, { headers });
-    const data = await r.json().catch(() => null);
-    if (!r.ok) return json({ ok: false, error: data || (await r.text()) }, r.status);
-    return json({ ok: true, items: data || [] });
+    const { res, data } = await restdbFetch(env, `/rest/${col}${qParam}`, {
+      method: "GET",
+    });
+
+    if (!res.ok) return json({ ok: false, error: data }, res.status);
+    return json({ ok: true, items: Array.isArray(data) ? data : [] });
   }
 
   // POST /api/items
@@ -131,19 +145,19 @@ async function handleItems(req, env, url) {
       return json({ ok: false, error: "functionalFit must be 1-5" }, 400);
     }
 
-    const customerId = S(body.customerId);
+    const customerName = S(body.customerName);
+    const customerId = S(body.customerId); // optional
     const category = S(body.category);
     const solution = S(body.solution);
     const vendor = S(body.vendor);
     const notes = S(body.notes);
 
-    // New date fields (date-only strings like "2026-01-06")
     const dateImplemented = S(body.dateImplemented);
     const contractExpiration = S(body.contractExpiration);
 
-    if (!customerId || !category || !solution) {
+    if (!customerName || !category || !solution) {
       return json(
-        { ok: false, error: "customerId, category, and solution are required" },
+        { ok: false, error: "customerName, category, and solution are required" },
         400
       );
     }
@@ -152,7 +166,8 @@ async function handleItems(req, env, url) {
     const now = new Date().toISOString();
 
     const doc = {
-      customerId,
+      customerName,
+      customerId: customerId || null,
       category,
       solution,
       vendor,
@@ -167,31 +182,62 @@ async function handleItems(req, env, url) {
       updatedAt: now,
     };
 
-    const r = await fetch(restUrl, {
+    const { res, data } = await restdbFetch(env, `/rest/${col}`, {
       method: "POST",
-      headers,
       body: JSON.stringify(doc),
     });
 
-    const data = await r.json().catch(() => null);
-    if (!r.ok) return json({ ok: false, error: data || (await r.text()) }, r.status);
+    if (!res.ok) return json({ ok: false, error: data }, res.status);
     return json({ ok: true, item: data });
   }
 
   // DELETE /api/items/:id
   if (req.method === "DELETE" && id) {
-    const r = await fetch(restUrl, { method: "DELETE", headers });
-    if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      return json({ ok: false, error: t || "Delete failed" }, r.status);
-    }
+    const { res, data } = await restdbFetch(
+      env,
+      `/rest/${col}/${encodeURIComponent(id)}`,
+      { method: "DELETE" }
+    );
+
+    if (!res.ok) return json({ ok: false, error: data }, res.status);
     return json({ ok: true });
   }
 
   return json({ ok: false, error: "Method not allowed" }, 405);
 }
 
-/* ----------------------------- UI (single-page) ----------------------------- */
+async function handleCustomers(req, env) {
+  if (req.method !== "GET") return json({ ok: false, error: "Method not allowed" }, 405);
+
+  // For simplicity: fetch all items, aggregate distinct customerName.
+  // This is fine for internal use with modest volumes.
+  const col = encodeURIComponent(String(env.RESTDB_COLLECTION || ""));
+  const fields = encodeURIComponent(JSON.stringify({ customerName: 1 }));
+  const sort = encodeURIComponent(JSON.stringify({ customerName: 1 }));
+
+  const { res, data } = await restdbFetch(env, `/rest/${col}?fields=${fields}&sort=${sort}`, {
+    method: "GET",
+  });
+
+  if (!res.ok) return json({ ok: false, error: data }, res.status);
+
+  const items = Array.isArray(data) ? data : [];
+  const map = new Map();
+
+  for (const it of items) {
+    const name = (it && it.customerName ? String(it.customerName).trim() : "");
+    if (!name) continue;
+    map.set(name, (map.get(name) || 0) + 1);
+  }
+
+  const customers = Array.from(map.entries())
+    .map(([customerName, count]) => ({ customerName, count }))
+    .sort((a, b) => a.customerName.localeCompare(b.customerName));
+
+  return json({ ok: true, customers });
+}
+
+/* ----------------------------- UI ----------------------------- */
 function htmlPage(env) {
   const categories = [
     "UC/UCaaS",
@@ -212,20 +258,6 @@ function htmlPage(env) {
     .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
     .join("");
 
-  const fitOptions = [
-    [5, "5 (Excellent)"],
-    [4, "4 (Good)"],
-    [3, "3 (Fair)"],
-    [2, "2 (Poor)"],
-    [1, "1 (Bad)"],
-  ]
-    .map(([v, t]) => `<option value="${v}">${t}</option>`)
-    .join("");
-
-  const tokenGateEnabled = !!env.APP_SHARED_TOKEN;
-
-  // NOTE: Do NOT use backticks in the browser script section below.
-  // This avoids breaking the Worker’s outer template literal and causing build errors.
   return `<!doctype html>
 <html>
 <head>
@@ -234,7 +266,7 @@ function htmlPage(env) {
   <title>Technology Matrix</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; }
-    .wrap { max-width: 1100px; margin: 0 auto; }
+    .wrap { max-width: 85%; margin: 0 auto; }
     h1 { margin: 0 0 8px; }
     .sub { color: #555; margin: 0 0 16px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -276,11 +308,11 @@ function htmlPage(env) {
 
     <div class="grid">
       <div class="card">
-        <div class="row" id="customerRow">
+        <div class="row">
           <div>
-            <label>Customer ID (Dynamics Account GUID)</label>
-            <input id="customerId" placeholder="00000000-0000-0000-0000-000000000000" />
-            <div class="muted">Tip: embed with ?customerId=&lt;guid&gt;&embed=1</div>
+            <label>Customer Name</label>
+            <input id="customerName" placeholder="e.g., Huntington Medical, Smart & Final..." />
+            <div class="muted">Tip (embed): ?customerName=&lt;name&gt;&embed=1</div>
           </div>
           <div>
             <label>Category</label>
@@ -304,7 +336,7 @@ function htmlPage(env) {
         <div class="row" style="margin-top:12px;">
           <div>
             <label>Technical Fit (1-5)</label>
-            <div class="seg" id="techSeg" data-target="technicalFit">
+            <div class="seg" id="techSeg">
               <button type="button" data-v="1">1</button>
               <button type="button" data-v="2">2</button>
               <button type="button" data-v="3">3</button>
@@ -313,10 +345,10 @@ function htmlPage(env) {
             </div>
             <input id="technicalFit" type="hidden" value="5" />
           </div>
-        
+
           <div>
             <label>Functional Fit (1-5)</label>
-            <div class="seg" id="funcSeg" data-target="functionalFit">
+            <div class="seg" id="funcSeg">
               <button type="button" data-v="1">1</button>
               <button type="button" data-v="2">2</button>
               <button type="button" data-v="3">3</button>
@@ -344,10 +376,10 @@ function htmlPage(env) {
         </div>
 
         <div style="margin-top:12px;">
-          <span class="pill" id="timePill">
+          <span class="pill">
             <span class="time I" id="timeCode">I</span>
             <span id="timeLabel">Invest</span>
-            <span class="muted" id="timeHint">(4-5 = High)</span>
+            <span class="muted">(4-5 = High)</span>
           </span>
         </div>
 
@@ -375,48 +407,50 @@ function htmlPage(env) {
           </div>
         </div>
 
-        <div id="tokenGate" class="muted" style="margin-top:10px;">
-          ${tokenGateEnabled
-            ? "This app is token-gated (MVP). Enter your token below (or protect with Cloudflare Access and remove the token gate)."
-            : "Token gate is disabled. If this is internal-only, consider Cloudflare Access."}
-        </div>
-
-        <div id="tokenRow" style="margin-top:10px;" class="${tokenGateEnabled ? "" : "hidden"}">
-          <label>X-App-Token</label>
-          <input id="appToken" placeholder="paste APP_SHARED_TOKEN here" />
+        <div id="browseHint" class="muted" style="margin-top:10px;">
+          If no customer is selected, you’ll see a list of customers here.
         </div>
 
         <div style="margin-top: 14px; overflow:auto;">
           <table>
             <thead>
               <tr>
-                <th>TIME</th>
-                <th>Category</th>
-                <th>Solution</th>
-                <th>Fit</th>
-                <th>Notes</th>
+                <th id="th1">TIME</th>
+                <th id="th2">Category / Customer</th>
+                <th id="th3">Solution</th>
+                <th id="th4">Fit / Count</th>
+                <th id="th5">Notes</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="tbody">
-              <tr><td colspan="6" class="muted">No data yet.</td></tr>
+              <tr><td colspan="6" class="muted">Loading…</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
+
     <div class="card" style="margin-top:12px;">
       <label>Dynamics iFrame Link (paste into CRM link field)</label>
       <div class="row">
         <input id="crmLink" readonly />
         <button type="button" id="copyCrmLink">Copy</button>
       </div>
-      <div class="muted">This link includes <b>customerId</b> and <b>embed=1</b>.</div>
+      <div class="muted">Uses <b>customerName</b> and <b>embed=1</b>.</div>
     </div>
   </div>
 
 <script>
 (function(){
+  function el(id){ return document.getElementById(id); }
+  function val(id){ var n = el(id); return n ? (n.value || "") : ""; }
+  function setVal(id, v){ var n = el(id); if (n) n.value = v; }
+  function esc(s){
+    return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+  function setError(msg){ var e = el("err"); if (e) e.textContent = msg || ""; }
+
   function computeTIME(tech, func) {
     var techHigh = Number(tech) >= 4;
     var funcHigh = Number(func) >= 4;
@@ -424,30 +458,6 @@ function htmlPage(env) {
     if (!techHigh && funcHigh) return { code:"M", label:"Migrate" };
     if (techHigh && !funcHigh) return { code:"T", label:"Tolerate" };
     return { code:"E", label:"Eliminate" };
-  }
-
-  function el(id){ return document.getElementById(id); }
-
-  function val(id){
-    var n = el(id);
-    return n ? (n.value || "") : "";
-  }
-
-  function setVal(id, v){
-    var n = el(id);
-    if (n) n.value = v;
-  }
-
-  function esc(s){
-    return String(s||"")
-      .replace(/&/g,"&amp;")
-      .replace(/</g,"&lt;")
-      .replace(/>/g,"&gt;");
-  }
-
-  function setError(msg){
-    var e = el("err");
-    if (e) e.textContent = msg || "";
   }
 
   function updateTimePreview(){
@@ -461,9 +471,9 @@ function htmlPage(env) {
 
   function buildCrmLink() {
     var base = location.origin + "/";
-    var cid = String(val("customerId") || "").trim();
-    if (!cid) return base;
-    return base + "?customerId=" + encodeURIComponent(cid) + "&embed=1";
+    var name = String(val("customerName") || "").trim();
+    if (!name) return base;
+    return base + "?customerName=" + encodeURIComponent(name) + "&embed=1";
   }
 
   function updateCrmLink() {
@@ -503,11 +513,6 @@ function htmlPage(env) {
   async function api(path, opts){
     opts = opts || {};
     var headers = Object.assign({}, opts.headers || {});
-    var tokenRow = el("tokenRow");
-    var tokenRowVisible = tokenRow && !tokenRow.classList.contains("hidden");
-    if (tokenRowVisible) {
-      headers["x-app-token"] = String(val("appToken") || "").trim();
-    }
     var res = await fetch(path, Object.assign({}, opts, { headers: headers }));
     var data = null;
     try { data = await res.json(); } catch(_e) { data = null; }
@@ -521,23 +526,62 @@ function htmlPage(env) {
     return data;
   }
 
-  async function refresh(){
-    setError("");
-    var customerId = String(val("customerId") || "").trim();
-    if (!customerId) {
-      renderRows([]);
+  function renderCustomerList(customers){
+    var tbody = el("tbody");
+    if (!tbody) return;
+
+    // Adjust headers for browse mode
+    el("th1").textContent = "Open";
+    el("th2").textContent = "Customer";
+    el("th3").textContent = "";
+    el("th4").textContent = "Count";
+    el("th5").textContent = "";
+
+    if (!customers || !customers.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">No customers found yet.</td></tr>';
       return;
     }
-    var category = val("filterCategory");
-    var q = new URLSearchParams({ customerId: customerId });
-    if (category) q.set("category", category);
-    var out = await api("/api/items?" + q.toString(), { method: "GET" });
-    renderRows((out && out.items) ? out.items : []);
+
+    var html = "";
+    for (var i=0; i<customers.length; i++){
+      var c = customers[i] || {};
+      var name = String(c.customerName || "").trim();
+      var count = Number(c.count || 0);
+
+      html += '<tr>'
+        + '<td><button data-open="' + esc(name) + '">Open</button></td>'
+        + '<td><b>' + esc(name) + '</b></td>'
+        + '<td></td>'
+        + '<td>' + esc(String(count)) + '</td>'
+        + '<td></td>'
+        + '<td></td>'
+        + '</tr>';
+    }
+    tbody.innerHTML = html;
+
+    var btns = tbody.querySelectorAll("button[data-open]");
+    for (var j=0; j<btns.length; j++){
+      (function(btn){
+        btn.addEventListener("click", function(){
+          var name = btn.getAttribute("data-open") || "";
+          setVal("customerName", name);
+          updateCrmLink();
+          refresh().catch(function(){});
+        });
+      })(btns[j]);
+    }
   }
 
   function renderRows(items){
     var tbody = el("tbody");
     if (!tbody) return;
+
+    // Restore headers for item mode
+    el("th1").textContent = "TIME";
+    el("th2").textContent = "Category";
+    el("th3").textContent = "Solution";
+    el("th4").textContent = "Fit";
+    el("th5").textContent = "Notes";
 
     if (!items || !items.length) {
       tbody.innerHTML = '<tr><td colspan="6" class="muted">No data yet.</td></tr>';
@@ -577,7 +621,7 @@ function htmlPage(env) {
     tbody.innerHTML = html;
 
     var btns = tbody.querySelectorAll("button[data-del]");
-    for (var j=0; j<btns.length; j++){
+    for (var k=0; k<btns.length; k++){
       (function(btn){
         btn.addEventListener("click", async function(){
           try {
@@ -588,14 +632,36 @@ function htmlPage(env) {
             setError(e.message || String(e));
           }
         });
-      })(btns[j]);
+      })(btns[k]);
     }
+  }
+
+  async function refresh(){
+    setError("");
+    updateCrmLink();
+
+    var name = String(val("customerName") || "").trim();
+    var category = val("filterCategory");
+
+    if (!name) {
+      // Browse mode: show customers list
+      var outC = await api("/api/customers", { method: "GET" });
+      renderCustomerList(outC && outC.customers ? outC.customers : []);
+      return;
+    }
+
+    // Item mode
+    var q = new URLSearchParams({ customerName: name });
+    if (category) q.set("category", category);
+
+    var out = await api("/api/items?" + q.toString(), { method: "GET" });
+    renderRows((out && out.items) ? out.items : []);
   }
 
   // --- Embed mode for Dynamics iFrame ---
   (function initFromQuery(){
     var qs = new URLSearchParams(location.search);
-    var customerIdQS = String(qs.get("customerId") || "").trim();
+    var customerNameQS = String(qs.get("customerName") || "").trim();
     var embed = qs.get("embed") === "1";
 
     if (embed) {
@@ -606,12 +672,11 @@ function htmlPage(env) {
       if (s) s.style.display = "none";
     }
 
-    if (customerIdQS) {
-      setVal("customerId", customerIdQS);
-      el("customerId").setAttribute("readonly","readonly");
-      el("customerId").style.opacity = "0.75";
+    if (customerNameQS) {
+      setVal("customerName", customerNameQS);
+      el("customerName").setAttribute("readonly","readonly");
+      el("customerName").style.opacity = "0.75";
     }
-    updateCrmLink();
   })();
 
   // init segmented controls
@@ -636,7 +701,7 @@ function htmlPage(env) {
   el("saveBtn").addEventListener("click", async function(){
     try {
       setError("");
-      var customerId = String(val("customerId") || "").trim();
+      var customerName = String(val("customerName") || "").trim();
       var category = val("category");
       var solution = String(val("solution") || "").trim();
       var vendor = String(val("vendor") || "").trim();
@@ -646,12 +711,12 @@ function htmlPage(env) {
       var dateImplemented = val("dateImplemented");
       var contractExpiration = val("contractExpiration");
 
-      if (!customerId) throw new Error("Customer ID is required.");
+      if (!customerName) throw new Error("Customer Name is required.");
       if (!category) throw new Error("Category is required.");
       if (!solution) throw new Error("Current solution is required.");
 
       var payload = {
-        customerId: customerId,
+        customerName: customerName,
         category: category,
         solution: solution,
         vendor: vendor,
@@ -700,17 +765,16 @@ function htmlPage(env) {
   el("refreshBtn").addEventListener("click", function(){ refresh().catch(function(){}); });
   el("filterCategory").addEventListener("change", function(){ refresh().catch(function(){}); });
 
-  el("customerId").addEventListener("change", function(){
+  el("customerName").addEventListener("change", function(){
     updateCrmLink();
     refresh().catch(function(){});
   });
 
   updateTimePreview();
-  updateCrmLink();
-  refresh().catch(function(){});
+  // Ensure first load works even if query params set readonly fields
+  setTimeout(function(){ refresh().catch(function(){}); }, 0);
 })();
 </script>
-
 </body>
 </html>`;
 }
