@@ -265,20 +265,33 @@ function htmlPage(env) {
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Technology Matrix</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; background: #f3f2f1;}
     .wrap { max-width: 98%; margin: 0 auto; }
     h1 { margin: 0 0 8px; }
     .sub { color: #555; margin: 0 0 16px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    label { font-size: 12px; color: #333; display:block; margin-bottom: 6px; }
-    input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 10px; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px;  align-items: start; }
+    label { font-size: 12px; color: #333; display:block; margin-bottom: 6px;  color: #605e5c; font-weight: 600;}
+    input, select, textarea { width: 100%; min-width: 0; padding: 10px; border: 1px solid #c8c6c4; border-radius: 8px; font-size: 14px; box-sizing: border-box; background: #fff;}
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #605e5c;
+      box-shadow: 0 0 0 2px rgba(0,0,0,.06);
+    }
     textarea { min-height: 84px; resize: vertical; }
-    .row { display:flex; gap: 12px; align-items:center; }
-    .row > * { flex: 1; }
-    .card { border: 1px solid #e5e5e5; border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
+    .row { display:flex; gap: 12px; align-items:center; flex-wrap: wrap;}
+    .row > * { flex: 1; min-width: 220px;}
+    /* Cards */
+      .card {
+        background: #fff;
+        border: 1px solid #edebe9;
+        box-shadow: none;
+        border-radius: 12px;
+        min-width: 0;
+      }
     .actions { display:flex; gap: 10px; margin-top: 12px; }
-    button { padding: 10px 14px; border-radius: 12px; border: 1px solid #ccc; background: #fff; cursor: pointer; font-weight: 600; }
-    button.primary { border-color: #111; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #c8c6c4; background: #fff; cursor: pointer; font-weight: 600; }
+    button.primary { background: #0f6cbd; border-color: #0f6cbd; color: #fff; }
+    button.primary:hover { filter: brightness(0.98); }
     .pill { display:inline-flex; align-items:center; gap: 8px; padding: 6px 10px; border-radius: 999px; font-size: 12px; border: 1px solid #ddd; }
     .seg { display:flex; border: 1px solid #ccc; border-radius: 999px; overflow:hidden; }
     .seg button { flex: 1; padding: 10px 0; border: 0; background: #fff; cursor: pointer; font-weight: 700; }
@@ -289,8 +302,8 @@ function htmlPage(env) {
     .M { background: #d97706; }
     .T { background: #64748b; }
     .E { background: #dc2626; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+    table { width:100%; border-collapse: collapse; table-layout: fixed;}
+    th, td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; overflow-wrap: anywhere;}
     th { text-align:left; font-size: 12px; color:#444; }
     .muted { color:#666; font-size: 12px; }
     .topbar { display:flex; gap: 12px; align-items:flex-end; justify-content: space-between; }
@@ -309,7 +322,7 @@ function htmlPage(env) {
     <div class="grid">
       <div class="card">
         <div class="row">
-          <div>
+          <div id="customerNameBlock">
             <label>Customer Name</label>
             <input id="customerName" placeholder="e.g., Huntington Medical, Smart & Final..." />
             <div class="muted">Tip (embed): ?customerName=&lt;name&gt;&embed=1</div>
@@ -407,6 +420,17 @@ function htmlPage(env) {
           </div>
         </div>
 
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label>Open / Create Customer</label>
+            <input id="browseCustomerName" placeholder="Type a customer name…" />
+          </div>
+          <div style="max-width:160px;">
+            <label>&nbsp;</label>
+            <button type="button" id="openCustomerBtn" class="primary">Open</button>
+          </div>
+        </div>
+
         <div id="browseHint" class="muted" style="margin-top:10px;">
           If no customer is selected, you’ll see a list of customers here.
         </div>
@@ -431,7 +455,7 @@ function htmlPage(env) {
       </div>
     </div>
 
-    <div class="card" style="margin-top:12px;">
+    <div id="crmLinkPanel" class="card" style="margin-top:12px;">
       <label>Dynamics iFrame Link (paste into CRM link field)</label>
       <div class="row">
         <input id="crmLink" readonly />
@@ -668,8 +692,17 @@ function htmlPage(env) {
       document.body.style.margin = "10px";
       var t = el("title");
       var s = el("subtitle");
+      var adminBits = el("browseCustomerName");
+      var lp = el("crmLinkPanel");
+      var cnb = el("customerNameBlock");
+      if (cnb) cnb.style.display = "none";
       if (t) t.style.display = "none";
       if (s) s.style.display = "none";
+      if (adminBits) {
+          var r = adminBits.closest(".row");
+          if (r) r.style.display = "none";
+      }
+      if (lp) lp.style.display = "none";
     }
 
     if (customerNameQS) {
@@ -768,6 +801,18 @@ function htmlPage(env) {
   el("customerName").addEventListener("change", function(){
     updateCrmLink();
     refresh().catch(function(){});
+
+  var openBtn = el("openCustomerBtn");
+  if (openBtn) {
+    openBtn.addEventListener("click", function(){
+      var name = String(val("browseCustomerName") || "").trim();
+      if (!name) { setError("Enter a customer name to open/create."); return; }
+      setVal("customerName", name);
+      updateCrmLink();
+      refresh().catch(function(){});
+    });
+}
+
   });
 
   updateTimePreview();
