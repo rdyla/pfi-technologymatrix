@@ -312,6 +312,18 @@ function htmlPage(env) {
       gap: 16px;
       align-items: start;
     }
+    .grid > .card:first-child {
+      position: sticky;
+      top: 12px;              
+      align-self: start;
+    }
+    .grid > .card:last-child table {
+      font-size: 13px;
+    }
+    .grid > .card:last-child th,
+    .grid > .card:last-child td {
+      padding: 8px 10px;
+    }
     label { font-size: 12px; color: #333; display:block; margin-bottom: 6px;  color: #605e5c; font-weight: 600;}
     input, select, textarea { width: 100%; min-width: 0; padding: 10px; border: 1px solid #c8c6c4; border-radius: 8px; font-size: 14px; box-sizing: border-box; background: #fff;}
     input:focus, select:focus, textarea:focus {
@@ -355,6 +367,9 @@ function htmlPage(env) {
     .error { color:#b91c1c; font-size: 13px; margin-top: 8px; }
     .hidden { display:none; }
     #copyCrmLink { max-width: 120px; }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr;}
+      .grid > .card:first-child { position: static; }
   </style>
 </head>
 <body>
