@@ -287,6 +287,7 @@ function htmlPage(env) {
         box-shadow: none;
         border-radius: 12px;
         min-width: 0;
+        padding: 8px;
       }
     .actions { display:flex; gap: 10px; margin-top: 12px; }
     button { padding: 10px 14px; border-radius: 8px; border: 1px solid #c8c6c4; background: #fff; cursor: pointer; font-weight: 600; }
