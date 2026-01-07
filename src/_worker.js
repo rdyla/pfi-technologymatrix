@@ -318,23 +318,7 @@ function htmlPage(env) {
     .row { display:flex; gap: 12px; align-items:center; flex-wrap: wrap;}
     .row > * { flex: 1; min-width: 220px;}
     /* Cards */
-      .cardLeft {
-        background: #fff;
-        border: 1px solid #edebe9;
-        box-shadow: none;
-        border-radius: 12px;
-        max-width: 40%;
-        padding: 8px;
-      }
-      .cardRight {
-        background: #fff;
-        border: 1px solid #edebe9;
-        box-shadow: none;
-        border-radius: 12px;
-         max-width: 60%;
-        padding: 8px;
-      }
-      .cardCenter {
+.card {
         background: #fff;
         border: 1px solid #edebe9;
         box-shadow: none;
@@ -374,7 +358,7 @@ function htmlPage(env) {
     <p class="sub" id="subtitle">Capture current-state solutions by category and score them using TIME (Technical vs Functional fit).</p>
 
     <div class="grid">
-      <div class="cardLeft">
+      <div class="card">
       <input id="editingId" type="hidden" value="" />
         <div class="row">
           <div id="customerNameBlock">
@@ -459,7 +443,7 @@ function htmlPage(env) {
         <div class="error" id="err"></div>
       </div>
 
-      <div class="cardRight">
+      <div class="card">
         <div class="topbar">
           <div class="filters">
             <div class="small">
@@ -510,7 +494,7 @@ function htmlPage(env) {
       </div>
     </div>
 
-    <div id="crmLinkPanel" class="cardCenter" style="margin-top:12px;">
+    <div id="crmLinkPanel" class="card" style="margin-top:12px;">
       <label>Dynamics iFrame Link (paste into CRM link field)</label>
       <div class="row">
         <input id="crmLink" readonly />
