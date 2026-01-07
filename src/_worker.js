@@ -331,7 +331,7 @@ function htmlPage(env) {
         border: 1px solid #edebe9;
         box-shadow: none;
         border-radius: 12px;
-        min-width: 0;
+         max-width: 60%;
         padding: 8px;
       }
       .cardCenter {
