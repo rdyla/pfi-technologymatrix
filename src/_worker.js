@@ -265,7 +265,7 @@ function htmlPage(env) {
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Technology Matrix</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; background: #f3f2f1;}
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; }
     .wrap { max-width: 100%; margin: 18px; }
     h1 { margin: 0 0 8px; }
     .sub { color: #555; margin: 0 0 16px; }
