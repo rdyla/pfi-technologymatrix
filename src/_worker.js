@@ -110,7 +110,6 @@ async function handleItems(req, env, url) {
 
     const q = {};
     if (customerName) q.customerName = customerName;
-    // allow legacy filter if someone still passes a guid
     if (!customerName && customerId) q.customerId = customerId;
     if (category) q.category = category;
 
@@ -120,10 +119,7 @@ async function handleItems(req, env, url) {
         ? `?q=${encodeURIComponent(JSON.stringify(q))}&sort=${sort}`
         : `?sort=${sort}`;
 
-    const { res, data } = await restdbFetch(env, `/rest/${col}${qParam}`, {
-      method: "GET",
-    });
-
+    const { res, data } = await restdbFetch(env, `/rest/${col}${qParam}`, { method: "GET" });
     if (!res.ok) return json({ ok: false, error: data }, res.status);
     return json({ ok: true, items: Array.isArray(data) ? data : [] });
   }
@@ -138,12 +134,8 @@ async function handleItems(req, env, url) {
     const technicalFit = Number(body.technicalFit);
     const functionalFit = Number(body.functionalFit);
 
-    if (!(technicalFit >= 1 && technicalFit <= 5)) {
-      return json({ ok: false, error: "technicalFit must be 1-5" }, 400);
-    }
-    if (!(functionalFit >= 1 && functionalFit <= 5)) {
-      return json({ ok: false, error: "functionalFit must be 1-5" }, 400);
-    }
+    if (!(technicalFit >= 1 && technicalFit <= 5)) return json({ ok: false, error: "technicalFit must be 1-5" }, 400);
+    if (!(functionalFit >= 1 && functionalFit <= 5)) return json({ ok: false, error: "functionalFit must be 1-5" }, 400);
 
     const customerName = S(body.customerName);
     const customerId = S(body.customerId); // optional
@@ -151,15 +143,11 @@ async function handleItems(req, env, url) {
     const solution = S(body.solution);
     const vendor = S(body.vendor);
     const notes = S(body.notes);
-
     const dateImplemented = S(body.dateImplemented);
     const contractExpiration = S(body.contractExpiration);
 
     if (!customerName || !category || !solution) {
-      return json(
-        { ok: false, error: "customerName, category, and solution are required" },
-        400
-      );
+      return json({ ok: false, error: "customerName, category, and solution are required" }, 400);
     }
 
     const time = computeTIME(technicalFit, functionalFit);
@@ -191,21 +179,6 @@ async function handleItems(req, env, url) {
     return json({ ok: true, item: data });
   }
 
-  // DELETE /api/items/:id
-  if (req.method === "DELETE" && id) {
-    const { res, data } = await restdbFetch(
-      env,
-      `/rest/${col}/${encodeURIComponent(id)}`,
-      { method: "DELETE" }
-    );
-
-    if (!res.ok) return json({ ok: false, error: data }, res.status);
-    return json({ ok: true });
-  }
-
-  return json({ ok: false, error: "Method not allowed" }, 405);
-}
-
   // PUT /api/items/:id
   if (req.method === "PUT" && id) {
     const body = await req.json().catch(() => null);
@@ -216,12 +189,8 @@ async function handleItems(req, env, url) {
     const technicalFit = Number(body.technicalFit);
     const functionalFit = Number(body.functionalFit);
 
-    if (!(technicalFit >= 1 && technicalFit <= 5)) {
-      return json({ ok: false, error: "technicalFit must be 1-5" }, 400);
-    }
-    if (!(functionalFit >= 1 && functionalFit <= 5)) {
-      return json({ ok: false, error: "functionalFit must be 1-5" }, 400);
-    }
+    if (!(technicalFit >= 1 && technicalFit <= 5)) return json({ ok: false, error: "technicalFit must be 1-5" }, 400);
+    if (!(functionalFit >= 1 && functionalFit <= 5)) return json({ ok: false, error: "functionalFit must be 1-5" }, 400);
 
     const customerName = S(body.customerName);
     const category = S(body.category);
@@ -232,10 +201,7 @@ async function handleItems(req, env, url) {
     const contractExpiration = S(body.contractExpiration);
 
     if (!customerName || !category || !solution) {
-      return json(
-        { ok: false, error: "customerName, category, and solution are required" },
-        400
-      );
+      return json({ ok: false, error: "customerName, category, and solution are required" }, 400);
     }
 
     const time = computeTIME(technicalFit, functionalFit);
@@ -256,16 +222,26 @@ async function handleItems(req, env, url) {
       updatedAt: now,
     };
 
-    const r = await fetch(restUrl, {
+    const { res, data } = await restdbFetch(env, `/rest/${col}/${encodeURIComponent(id)}`, {
       method: "PUT",
-      headers,
       body: JSON.stringify(patch),
     });
 
-    const data = await r.json().catch(() => null);
-    if (!r.ok) return json({ ok: false, error: data || (await r.text()) }, r.status);
+    if (!res.ok) return json({ ok: false, error: data }, res.status);
     return json({ ok: true, item: data });
   }
+
+  // DELETE /api/items/:id
+  if (req.method === "DELETE" && id) {
+    const { res, data } = await restdbFetch(env, `/rest/${col}/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) return json({ ok: false, error: data }, res.status);
+    return json({ ok: true });
+  }
+
+  return json({ ok: false, error: "Method not allowed" }, 405);
+}
 
 async function handleCustomers(req, env) {
   if (req.method !== "GET") return json({ ok: false, error: "Method not allowed" }, 405);
@@ -681,8 +657,7 @@ function htmlPage(env) {
       var id = it._id || it.id || "";
       var code = it.timeCode || "T";
       var label = it.timeLabel || "";
-      var fit = (it.technicalFit ?? "?") + "/" + (it.functionalFit ?? "?");
-
+      var fit = (it.technicalFit != null ? it.technicalFit : "?") + "/" + (it.functionalFit != null ? it.functionalFit : "?");
       var sol = esc(it.solution);
       var ven = esc(it.vendor);
       var cat = esc(it.category);
@@ -726,16 +701,13 @@ function htmlPage(env) {
         });
       })(btns[k]);
     }
-  }
-
-  var ebtns = tbody.querySelectorAll("button[data-edit]");
+        var ebtns = tbody.querySelectorAll("button[data-edit]");
     for (var m=0; m<ebtns.length; m++){
       (function(btn){
         btn.addEventListener("click", function(){
           var did = btn.getAttribute("data-edit") || "";
           var found = null;
 
-          // find item in current list
           for (var x=0; x<items.length; x++){
             var it2 = items[x] || {};
             var id2 = it2._id || it2.id || "";
@@ -743,7 +715,6 @@ function htmlPage(env) {
           }
           if (!found) { setError("Could not find item to edit."); return; }
 
-          // populate form
           setVal("editingId", did);
           setVal("customerName", found.customerName || "");
           setVal("category", found.category || "");
@@ -759,19 +730,16 @@ function htmlPage(env) {
           initSeg("funcSeg", "functionalFit");
           updateTimePreview();
 
-          // change Save button label
           var sb = el("saveBtn");
           if (sb) sb.textContent = "Save Changes";
 
-          // scroll to form (nice UX)
           try { el("solution").scrollIntoView({ behavior: "smooth", block: "center" }); } catch(_e){}
         });
       })(ebtns[m]);
     }
+  }
 
-
-
-  async function refresh(){
+   async function refresh(){
     setError("");
     updateCrmLink();
 
@@ -922,6 +890,7 @@ function htmlPage(env) {
   el("customerName").addEventListener("change", function(){
     updateCrmLink();
     refresh().catch(function(){});
+  });
 
   var openBtn = el("openCustomerBtn");
   if (openBtn) {
@@ -932,9 +901,7 @@ function htmlPage(env) {
       updateCrmLink();
       refresh().catch(function(){});
     });
-}
-
-  });
+  }
 
   updateTimePreview();
   // Ensure first load works even if query params set readonly fields
