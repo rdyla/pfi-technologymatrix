@@ -206,6 +206,67 @@ async function handleItems(req, env, url) {
   return json({ ok: false, error: "Method not allowed" }, 405);
 }
 
+  // PUT /api/items/:id
+  if (req.method === "PUT" && id) {
+    const body = await req.json().catch(() => null);
+    if (!body) return json({ ok: false, error: "Invalid JSON body" }, 400);
+
+    const S = (v) => (v == null ? "" : String(v).trim());
+
+    const technicalFit = Number(body.technicalFit);
+    const functionalFit = Number(body.functionalFit);
+
+    if (!(technicalFit >= 1 && technicalFit <= 5)) {
+      return json({ ok: false, error: "technicalFit must be 1-5" }, 400);
+    }
+    if (!(functionalFit >= 1 && functionalFit <= 5)) {
+      return json({ ok: false, error: "functionalFit must be 1-5" }, 400);
+    }
+
+    const customerName = S(body.customerName);
+    const category = S(body.category);
+    const solution = S(body.solution);
+    const vendor = S(body.vendor);
+    const notes = S(body.notes);
+    const dateImplemented = S(body.dateImplemented);
+    const contractExpiration = S(body.contractExpiration);
+
+    if (!customerName || !category || !solution) {
+      return json(
+        { ok: false, error: "customerName, category, and solution are required" },
+        400
+      );
+    }
+
+    const time = computeTIME(technicalFit, functionalFit);
+    const now = new Date().toISOString();
+
+    const patch = {
+      customerName,
+      category,
+      solution,
+      vendor,
+      notes,
+      technicalFit,
+      functionalFit,
+      timeCode: time.code,
+      timeLabel: time.label,
+      dateImplemented: dateImplemented || null,
+      contractExpiration: contractExpiration || null,
+      updatedAt: now,
+    };
+
+    const r = await fetch(restUrl, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(patch),
+    });
+
+    const data = await r.json().catch(() => null);
+    if (!r.ok) return json({ ok: false, error: data || (await r.text()) }, r.status);
+    return json({ ok: true, item: data });
+  }
+
 async function handleCustomers(req, env) {
   if (req.method !== "GET") return json({ ok: false, error: "Method not allowed" }, 405);
 
@@ -322,6 +383,7 @@ function htmlPage(env) {
 
     <div class="grid">
       <div class="card">
+      <input id="editingId" type="hidden" value="" />
         <div class="row">
           <div id="customerNameBlock">
             <label>Customer Name</label>
@@ -640,7 +702,12 @@ function htmlPage(env) {
         + '<td><b>' + sol + '</b><div class="muted">' + ven + '</div>' + datesLine + '</td>'
         + '<td>' + esc(fit) + '</td>'
         + '<td style="max-width:360px; white-space:pre-wrap;">' + notes + '</td>'
-        + '<td><button data-del="' + esc(id) + '">Delete</button></td>'
+        + '<td>'
+        +   '<div style="display:flex; gap:8px;">'
+        +     '<button type="button" data-edit="' + esc(id) + '">Edit</button>'
+        +     '<button type="button" data-del="' + esc(id) + '">Delete</button>'
+        +   '</div>'
+        + '</td>'
         + '</tr>';
     }
     tbody.innerHTML = html;
@@ -660,6 +727,49 @@ function htmlPage(env) {
       })(btns[k]);
     }
   }
+
+  var ebtns = tbody.querySelectorAll("button[data-edit]");
+    for (var m=0; m<ebtns.length; m++){
+      (function(btn){
+        btn.addEventListener("click", function(){
+          var did = btn.getAttribute("data-edit") || "";
+          var found = null;
+
+          // find item in current list
+          for (var x=0; x<items.length; x++){
+            var it2 = items[x] || {};
+            var id2 = it2._id || it2.id || "";
+            if (String(id2) === String(did)) { found = it2; break; }
+          }
+          if (!found) { setError("Could not find item to edit."); return; }
+
+          // populate form
+          setVal("editingId", did);
+          setVal("customerName", found.customerName || "");
+          setVal("category", found.category || "");
+          setVal("solution", found.solution || "");
+          setVal("vendor", found.vendor || "");
+          setVal("notes", found.notes || "");
+          setVal("dateImplemented", found.dateImplemented || "");
+          setVal("contractExpiration", found.contractExpiration || "");
+
+          setVal("technicalFit", String(found.technicalFit || 5));
+          setVal("functionalFit", String(found.functionalFit || 5));
+          initSeg("techSeg", "technicalFit");
+          initSeg("funcSeg", "functionalFit");
+          updateTimePreview();
+
+          // change Save button label
+          var sb = el("saveBtn");
+          if (sb) sb.textContent = "Save Changes";
+
+          // scroll to form (nice UX)
+          try { el("solution").scrollIntoView({ behavior: "smooth", block: "center" }); } catch(_e){}
+        });
+      })(ebtns[m]);
+    }
+
+
 
   async function refresh(){
     setError("");
@@ -725,6 +835,9 @@ function htmlPage(env) {
     setVal("functionalFit", "5");
     setVal("dateImplemented", "");
     setVal("contractExpiration", "");
+    setVal("editingId", "");
+    var sb = el("saveBtn");
+    if (sb) sb.textContent = "Save";
     initSeg("techSeg", "technicalFit");
     initSeg("funcSeg", "functionalFit");
     updateCrmLink();
@@ -749,6 +862,10 @@ function htmlPage(env) {
       if (!category) throw new Error("Category is required.");
       if (!solution) throw new Error("Current solution is required.");
 
+      var editingId = String(val("editingId") || "").trim();
+      var method = editingId ? "PUT" : "POST";
+      var path = editingId ? ("/api/items/" + encodeURIComponent(editingId)) : "/api/items";
+
       var payload = {
         customerName: customerName,
         category: category,
@@ -761,10 +878,9 @@ function htmlPage(env) {
         contractExpiration: contractExpiration
       };
 
-      await api("/api/items", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload)
+      await api(path, { method: method,
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify(payload)
       });
 
       setVal("solution", "");
@@ -772,6 +888,10 @@ function htmlPage(env) {
       setVal("notes", "");
       setVal("dateImplemented", "");
       setVal("contractExpiration", "");
+      setVal("editingId", "");
+      var sb2 = el("saveBtn");
+      if (sb2) sb2.textContent = "Save";
+
       updateCrmLink();
       await refresh();
     } catch(e) {
